@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Lab1Fin.MainPage"
+             Title="Електронні таблиці — варіант 69">
+
+    <ContentPage.MenuBarItems>
+        <MenuBarItem Text="Файл">
+            <MenuFlyoutItem Text="Новий" Clicked="OnNew" />
+            <MenuFlyoutItem Text="Відкрити…" Clicked="OnOpen" />
+            <MenuFlyoutItem Text="Зберегти…" Clicked="OnSave" />
+        </MenuBarItem>
+        <MenuBarItem Text="Таблиця">
+            <MenuFlyoutItem Text="Додати рядок" Clicked="OnAddRow" />
+            <MenuFlyoutItem Text="Додати стовпець" Clicked="OnAddColumn" />
+            <MenuFlyoutItem Text="Видалити останній рядок" Clicked="OnRemoveRow" />
+            <MenuFlyoutItem Text="Видалити останній стовпець" Clicked="OnRemoveColumn" />
+        </MenuBarItem>
+        <MenuBarItem Text="Вигляд">
+            <MenuFlyoutItem Text="Режим ВИРАЗ" Clicked="OnShowExpr" />
+            <MenuFlyoutItem Text="Режим ЗНАЧЕННЯ" Clicked="OnShowValues" />
+        </MenuBarItem>
+        <MenuBarItem Text="Довідка">
+            <MenuFlyoutItem Text="Допомога" Clicked="OnHelp" />
+            <MenuFlyoutItem Text="Про програму" Clicked="OnAbout" />
+        </MenuBarItem>
+    </ContentPage.MenuBarItems>
+
+    <Grid RowDefinitions="Auto,*,Auto" Padding="8" RowSpacing="8">
+
+        <!-- Кнопки, що дублюють основні пункти меню -->
+        <FlexLayout Grid.Row="0" Wrap="Wrap" AlignItems="Center">
+            <Button Text="Новий" Clicked="OnNew" Margin="2" />
+            <Button Text="Відкрити" Clicked="OnOpen" Margin="2" />
+            <Button Text="Зберегти" Clicked="OnSave" Margin="2" />
+            <Button Text="+ Рядок" Clicked="OnAddRow" Margin="2" />
+            <Button Text="+ Стовпець" Clicked="OnAddColumn" Margin="2" />
+            <Button Text="− Рядок" Clicked="OnRemoveRow" Margin="2" />
+            <Button Text="− Стовпець" Clicked="OnRemoveColumn" Margin="2" />
+            <Switch x:Name="ModeSwitch" Toggled="OnModeToggled" Margin="12,0,0,0" />
+            <Label x:Name="ModeLabel" Text="Режим: ВИРАЗ" VerticalOptions="Center" />
+            <Button Text="Допомога" Clicked="OnHelp" Margin="12,2,2,2" />
+        </FlexLayout>
+
+        <ScrollView Grid.Row="1" Orientation="Both">
+            <Grid x:Name="SheetGrid" ColumnSpacing="1" RowSpacing="1" />
+        </ScrollView>
+
+        <Label x:Name="StatusLabel" Grid.Row="2" Text="Оберіть клітинку." LineBreakMode="WordWrap" />
+    </Grid>
+</ContentPage>
