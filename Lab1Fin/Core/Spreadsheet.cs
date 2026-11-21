@@ -1,25 +1,29 @@
 using System.Numerics;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
 namespace Lab1.Core;
 
+internal enum CellState { Pending, Evaluating, Done }
+
 public sealed class Cell
 {
     public string Raw = "";
-    public Node? Ast;              
-    public List<Stmt>? Program;     
+    public Node? Ast;
+    public List<Stmt>? Program;
     public FormulaException? Error;
-    public object? Value;  
-    internal int State;     
+    public object? Value;
+    internal CellState State;
 
     public string Display => Error != null ? "#ПОМИЛКА" : Spreadsheet.Format(Value);
 }
 
 public sealed class Spreadsheet
 {
+    public const int MaxSteps = 100_000;
 
-    public bool StrictLogical { get; set; } = false;
+    public const string DeletedRef = "#ПОСИЛАННЯ!";
 
     private readonly List<List<Cell>> _rows = new();
     public int Rows => _rows.Count;
@@ -27,38 +31,48 @@ public sealed class Spreadsheet
 
     public Cell this[int r, int c] => _rows[r][c];
 
+    private IEnumerable<Cell> AllCells => _rows.SelectMany(row => row);
+
     public Spreadsheet(int rows, int cols)
     {
         Cols = cols;
         for (int i = 0; i < rows; i++) AddRow();
     }
 
-    public void AddRow()
-    {
-        var row = new List<Cell>();
-        for (int i = 0; i < Cols; i++) row.Add(new Cell());
-        _rows.Add(row);
-    }
+    public void AddRow() => _rows.Add(Enumerable.Range(0, Cols).Select(_ => new Cell()).ToList());
 
     public void AddColumn()
     {
-        foreach (var r in _rows) r.Add(new Cell());
+        foreach (var row in _rows) row.Add(new Cell());
         Cols++;
     }
 
-    public void RemoveRow()
+    public void RemoveRow(int index)
     {
-        if (_rows.Count > 1) { _rows.RemoveAt(_rows.Count - 1); Recalculate(); }
+        if (Rows <= 1 || index < 0 || index >= Rows) return;
+        _rows.RemoveAt(index);
+        ShiftRefs((r, c) => r == index ? null : (r > index ? r - 1 : r, c));
     }
 
-    public void RemoveColumn()
+    public void RemoveColumn(int index)
     {
-        if (Cols > 1)
-        {
-            foreach (var r in _rows) r.RemoveAt(r.Count - 1);
-            Cols--;
-            Recalculate();
-        }
+        if (Cols <= 1 || index < 0 || index >= Cols) return;
+        foreach (var row in _rows) row.RemoveAt(index);
+        Cols--;
+        ShiftRefs((r, c) => c == index ? null : (r, c > index ? c - 1 : c));
+    }
+
+    private void ShiftRefs(Func<int, int, (int Row, int Col)?> move)
+    {
+        foreach (var cell in AllCells)
+            cell.Raw = ExpressionParser.ReplaceCellRefs(cell.Raw, name =>
+            {
+                if (!TryParseAddress(name, out int r, out int c)) return name;
+                var to = move(r, c);
+                if (to == null) return DeletedRef;
+                return to.Value == (r, c) ? name : Address(to.Value.Row, to.Value.Col);
+            });
+        Recalculate();
     }
 
     public void SetRaw(int r, int c, string text)
@@ -79,15 +93,19 @@ public sealed class Spreadsheet
 
     public static bool TryParseAddress(string name, out int row, out int col)
     {
-        row = col = 0;
+        row = 0;
         int i = 0;
         while (i < name.Length && char.IsAsciiLetter(name[i])) i++;
-        if (i == 0 || i > 3 || i == name.Length) return false;
-        if (!int.TryParse(name.AsSpan(i), out int r) || r < 1) return false;
-        int cc = 0;
-        for (int k = 0; k < i; k++) cc = cc * 26 + (char.ToUpperInvariant(name[k]) - 'A' + 1);
+        if (!TryParseColumn(name[..i], out col) || !int.TryParse(name.AsSpan(i), out int r) || r < 1) return false;
         row = r - 1;
-        col = cc - 1;
+        return true;
+    }
+
+    public static bool TryParseColumn(string letters, out int col)
+    {
+        col = -1;
+        if (letters.Length is 0 or > 3 || !letters.All(char.IsAsciiLetter)) return false;
+        col = letters.Aggregate(0, (acc, ch) => acc * 26 + (char.ToUpperInvariant(ch) - 'A' + 1)) - 1;
         return true;
     }
 
@@ -95,53 +113,48 @@ public sealed class Spreadsheet
     {
         null => "",
         bool b => b ? "ІСТИНА" : "ХИБНІСТЬ",
-        BigInteger i => i.ToString(),
         _ => v.ToString() ?? ""
     };
 
     public void Recalculate()
     {
-        foreach (var row in _rows)
-            foreach (var cell in row)
+        foreach (var cell in AllCells)
+        {
+            cell.Ast = null; cell.Program = null; cell.Error = null; cell.Value = null;
+            cell.State = CellState.Pending;
+            if (string.IsNullOrWhiteSpace(cell.Raw)) { cell.State = CellState.Done; continue; }
+            try
             {
-                cell.Ast = null; cell.Program = null; cell.Error = null; cell.Value = null; cell.State = 0;
-                if (string.IsNullOrWhiteSpace(cell.Raw)) { cell.State = 2; continue; }
-                try
-                {
-                    if (LooksLikeProgram(cell.Raw)) cell.Program = ExpressionParser.ParseProgram(cell.Raw);
-                    else cell.Ast = ExpressionParser.Parse(cell.Raw);
-                }
-                catch (FormulaException e) { cell.Error = e; cell.State = 2; }
-            }
+                int deleted = cell.Raw.IndexOf(DeletedRef, StringComparison.Ordinal);
+                if (deleted >= 0)
+                    throw new FormulaException("Посилання на клітинку з видаленого рядка або стовпця", deleted, DeletedRef.Length, false);
 
-        foreach (var row in _rows)
-            foreach (var cell in row)
-                Resolve(cell, null);
+                if (LooksLikeProgram(cell.Raw)) cell.Program = ExpressionParser.ParseProgram(cell.Raw);
+                else cell.Ast = ExpressionParser.Parse(cell.Raw);
+            }
+            catch (FormulaException e) { cell.Error = e; cell.State = CellState.Done; }
+        }
+
+        foreach (var cell in AllCells)
+            Resolve(cell, null);
     }
 
     private void Resolve(Cell cell, Node? from)
     {
-        if (cell.State == 2) return;
-        if (cell.State == 1)
-            throw Err($"Циклічне посилання на клітинку {from?.Name}", from!, false);
+        if (cell.State == CellState.Done) return;
+        if (cell.State == CellState.Evaluating)
+            throw Err($"Циклічне посилання на клітинку {from?.Name}", from!);
 
-        cell.State = 1;
+        cell.State = CellState.Evaluating;
         try
         {
-            object v = cell.Program != null ? RunProgram(cell.Program) : Eval(cell.Ast!, null);
-            if (StrictLogical && v is not bool)
-            {
-                if (cell.Program != null)
-                    throw new FormulaException("Результат програми має бути логічним", cell.Program[0].Pos, TotalLen(cell.Program), false);
-                throw Err("Результат виразу має бути логічним", cell.Ast!, false);
-            }
-            cell.Value = v;
+            cell.Value = cell.Program != null ? RunProgram(cell.Program) : Eval(cell.Ast!, null);
         }
         catch (FormulaException e) { cell.Error = e; }
-        cell.State = 2;
+        cell.State = CellState.Done;
     }
 
-    private static FormulaException Err(string msg, Node n, bool syntax) => new(msg, n.Pos, n.Len, syntax);
+    private static FormulaException Err(string msg, Node n) => new(msg, n.Pos, n.Len, false);
 
     private object Eval(Node n, Dictionary<string, object>? env)
     {
@@ -152,17 +165,17 @@ public sealed class Spreadsheet
 
             case NodeKind.Var:
                 if (env != null && env.TryGetValue(n.Name, out var varValue)) return varValue;
-                throw Err($"Змінна '{n.Name}' не визначена (їй не присвоєно значення)", n, false);
+                throw Err($"Змінна '{n.Name}' не визначена (їй не присвоєно значення)", n);
 
             case NodeKind.Ref:
             {
                 if (n.Row >= Rows || n.Col >= Cols)
-                    throw Err($"Клітинка {n.Name} не існує в таблиці", n, false);
+                    throw Err($"Клітинка {n.Name} не існує в таблиці", n);
                 var target = _rows[n.Row][n.Col];
                 Resolve(target, n);
                 if (target.Error != null)
-                    throw Err($"Клітинка {n.Name} містить помилку", n, false);
-                return target.Value ?? BigInteger.Zero; // порожня клітинка = 0
+                    throw Err($"Клітинка {n.Name} містить помилку", n);
+                return target.Value ?? BigInteger.Zero;
             }
 
             case NodeKind.Unary:
@@ -190,35 +203,33 @@ public sealed class Spreadsheet
                     case Op.Eq:
                         if (l is bool lb && r is bool rb) return lb == rb;
                         if (l is BigInteger li && r is BigInteger ri) return li == ri;
-                        throw Err("Неможливо порівняти число з логічним значенням", n, false);
+                        throw Err("Неможливо порівняти число з логічним значенням", n);
                     default:
-                        throw Err("Невідома операція", n, false);
+                        throw Err("Невідома операція", n);
                 }
             }
         }
     }
 
+    private static bool AsBool(object v, Node n, string op) =>
+        v is bool b ? b : throw Err($"Операція '{op}' вимагає логічного операнда, а отримано число", n);
 
-    public const int MaxSteps = 100_000;
+    private static BigInteger AsInt(object v, Node n, string op) =>
+        v is BigInteger i ? i : throw Err($"Операція '{op}' вимагає числового операнда, а отримано логічне значення", n);
 
     internal static bool LooksLikeProgram(string raw) =>
         raw.Contains(":=") || Regex.IsMatch(raw, @"^\s*(if|while)\b", RegexOptions.IgnoreCase);
-
-    private static int TotalLen(List<Stmt> program)
-    {
-        var last = program[^1];
-        return last.Pos + last.Len - program[0].Pos;
-    }
 
     private object RunProgram(List<Stmt> program)
     {
         var env = new Dictionary<string, object>();
         int steps = 0;
         Exec(program, env, ref steps);
-        if (!env.TryGetValue("result", out var result))
-            throw new FormulaException("Програма не присвоїла значення змінній result",
-                program[0].Pos, TotalLen(program), false);
-        return result;
+        if (env.TryGetValue("result", out var result)) return result;
+
+        var last = program[^1];
+        throw new FormulaException("Програма не присвоїла значення змінній result",
+            program[0].Pos, last.Pos + last.Len - program[0].Pos, false);
     }
 
     private void Exec(List<Stmt> block, Dictionary<string, object> env, ref int steps)
@@ -256,18 +267,13 @@ public sealed class Spreadsheet
     }
 
     private static bool Condition(object v, Node n, string keyword) =>
-        v is bool b ? b : throw Err($"Умова оператора '{keyword}' має бути логічною, а отримано число", n, false);
+        v is bool b ? b : throw Err($"Умова оператора '{keyword}' має бути логічною, а отримано число", n);
 
-    private static bool AsBool(object v, Node n, string op) =>
-        v is bool b ? b : throw Err($"Операція '{op}' вимагає логічного операнда, а отримано число", n, false);
-
-    private static BigInteger AsInt(object v, Node n, string op) =>
-        v is BigInteger i ? i : throw Err($"Операція '{op}' вимагає числового операнда, а отримано логічне значення", n, false);
+    private static readonly JsonSerializerOptions JsonOptions =
+        new() { WriteIndented = true, Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
 
     public string ToJson() =>
-        JsonSerializer.Serialize(
-            _rows.Select(r => r.Select(c => c.Raw).ToArray()).ToArray(),
-            new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+        JsonSerializer.Serialize(_rows.Select(r => r.Select(c => c.Raw).ToArray()).ToArray(), JsonOptions);
 
     public static Spreadsheet FromJson(string json)
     {

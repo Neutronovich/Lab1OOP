@@ -1,11 +1,9 @@
 namespace Lab1.Core;
 
-
 public abstract class Stmt
 {
     public int Pos, Len;
 }
-
 
 public sealed class AssignStmt : Stmt
 {

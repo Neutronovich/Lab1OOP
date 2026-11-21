@@ -6,7 +6,6 @@ namespace Lab1.Core;
 
 internal sealed class AstBuilder : ExprBaseVisitor<Node>
 {
-    
     private readonly bool _allowVars;
 
     public AstBuilder(bool allowVars) => _allowVars = allowVars;
@@ -17,6 +16,14 @@ internal sealed class AstBuilder : ExprBaseVisitor<Node>
         Pos = c.Start.StartIndex,
         Len = c.Stop.StopIndex - c.Start.StartIndex + 1
     };
+
+    private Node Unary(ParserRuleContext c, Op op, ExprParser.ExpressionContext operand)
+    {
+        var n = Make(c, NodeKind.Unary);
+        n.Op = op;
+        n.A = Visit(operand);
+        return n;
+    }
 
     private Node Binary(ParserRuleContext c, Op op, ExprParser.ExpressionContext l, ExprParser.ExpressionContext r)
     {
@@ -31,21 +38,10 @@ internal sealed class AstBuilder : ExprBaseVisitor<Node>
 
     public override Node VisitParenExpr(ExprParser.ParenExprContext c) => Visit(c.expression());
 
-    public override Node VisitUnaryExpr(ExprParser.UnaryExprContext c)
-    {
-        var n = Make(c, NodeKind.Unary);
-        n.Op = c.op.Type == ExprLexer.MINUS ? Op.Minus : Op.Plus;
-        n.A = Visit(c.expression());
-        return n;
-    }
+    public override Node VisitUnaryExpr(ExprParser.UnaryExprContext c) =>
+        Unary(c, c.op.Type == ExprLexer.MINUS ? Op.Minus : Op.Plus, c.expression());
 
-    public override Node VisitNotExpr(ExprParser.NotExprContext c)
-    {
-        var n = Make(c, NodeKind.Unary);
-        n.Op = Op.Not;
-        n.A = Visit(c.expression());
-        return n;
-    }
+    public override Node VisitNotExpr(ExprParser.NotExprContext c) => Unary(c, Op.Not, c.expression());
 
     public override Node VisitCompareExpr(ExprParser.CompareExprContext c)
     {
@@ -94,14 +90,7 @@ internal sealed class AstBuilder : ExprBaseVisitor<Node>
         return n;
     }
 
-
-    public List<Stmt> BuildBlock(ExprParser.BlockContext block)
-    {
-        var list = new List<Stmt>();
-        foreach (var s in block.statement())
-            list.Add(BuildStatement(s));
-        return list;
-    }
+    public List<Stmt> BuildBlock(ExprParser.BlockContext block) => block.statement().Select(BuildStatement).ToList();
 
     private Stmt BuildStatement(ExprParser.StatementContext s)
     {

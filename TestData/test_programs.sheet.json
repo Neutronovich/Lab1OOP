@@ -1,0 +1,17 @@
+[
+  [
+    "5",
+    "if A1 > 3 then result := true else result := false end",
+    "x := true; n := false; while x do x := false; n := true end; result := n"
+  ],
+  [
+    "flag := A1 < 0; if flag then result := false else result := not flag end",
+    "x := true; while x do x := true end; result := x",
+    "result := y"
+  ],
+  [
+    "if B1 and C1 then result := true end",
+    "x := ; result := true",
+    "B1 eqv C1"
+  ]
+]

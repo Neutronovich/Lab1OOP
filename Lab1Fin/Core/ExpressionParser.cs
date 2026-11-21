@@ -1,3 +1,4 @@
+using System.Text;
 using Antlr4.Runtime;
 using Lab1.Core.Parsing;
 
@@ -15,6 +16,22 @@ public static class ExpressionParser
     {
         var tree = CreateParser(text).programUnit();
         return new AstBuilder(allowVars: true).BuildBlock(tree.block());
+    }
+
+    public static string ReplaceCellRefs(string text, Func<string, string> replace)
+    {
+        var lexer = new ExprLexer(new AntlrInputStream(text));
+        lexer.RemoveErrorListeners();
+
+        var sb = new StringBuilder();
+        int last = 0;
+        foreach (var t in lexer.GetAllTokens())
+        {
+            if (t.Type != ExprLexer.CELL) continue;
+            sb.Append(text, last, t.StartIndex - last).Append(replace(t.Text));
+            last = t.StopIndex + 1;
+        }
+        return sb.Append(text, last, text.Length - last).ToString();
     }
 
     private static ExprParser CreateParser(string text)

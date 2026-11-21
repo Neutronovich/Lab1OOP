@@ -9,12 +9,14 @@
             <MenuFlyoutItem Text="Новий" Clicked="OnNew" />
             <MenuFlyoutItem Text="Відкрити…" Clicked="OnOpen" />
             <MenuFlyoutItem Text="Зберегти…" Clicked="OnSave" />
+            <MenuFlyoutSeparator />
+            <MenuFlyoutItem Text="Вихід" Clicked="OnExit" />
         </MenuBarItem>
         <MenuBarItem Text="Таблиця">
             <MenuFlyoutItem Text="Додати рядок" Clicked="OnAddRow" />
             <MenuFlyoutItem Text="Додати стовпець" Clicked="OnAddColumn" />
-            <MenuFlyoutItem Text="Видалити останній рядок" Clicked="OnRemoveRow" />
-            <MenuFlyoutItem Text="Видалити останній стовпець" Clicked="OnRemoveColumn" />
+            <MenuFlyoutItem Text="Видалити рядок…" Clicked="OnRemoveRow" />
+            <MenuFlyoutItem Text="Видалити стовпець…" Clicked="OnRemoveColumn" />
         </MenuBarItem>
         <MenuBarItem Text="Вигляд">
             <MenuFlyoutItem Text="Режим ВИРАЗ" Clicked="OnShowExpr" />
@@ -28,7 +30,6 @@
 
     <Grid RowDefinitions="Auto,*,Auto" Padding="8" RowSpacing="8">
 
-        <!-- Кнопки, що дублюють основні пункти меню -->
         <FlexLayout Grid.Row="0" Wrap="Wrap" AlignItems="Center">
             <Button Text="Новий" Clicked="OnNew" Margin="2" />
             <Button Text="Відкрити" Clicked="OnOpen" Margin="2" />
